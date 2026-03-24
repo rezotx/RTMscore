@@ -17,22 +17,9 @@ METAL = ["LI","NA","K","RB","CS","MG","TL","CU","AG","BE","NI","PT","ZN","CO","P
 		"TM","LU","HF","ZR","CE","U","PU","TH"] 
 RES_MAX_NATOMS=24
 
-def _ensure_bonds(u):
-	"""Guess bonds if the Universe does not already have them."""
-	try:
-		if len(u.bonds) > 0:
-			return
-	except Exception:
-		pass
-	from MDAnalysis.topology.guessers import guess_bonds
-	guessed = guess_bonds(u.atoms, u.atoms.positions)
-	u.add_TopologyAttr("bonds", guessed)
-
-
 def prot_to_graph(prot, cutoff):
 	"""obtain the residue graphs"""
 	u = mda.Universe(prot)
-	_ensure_bonds(u)
 	num_residues = len(u.residues)
 
 	res_feats = np.array([calc_res_features(res) for res in u.residues])
