@@ -1,0 +1,48 @@
+FROM --platform=linux/amd64 python:3.8.18-slim-bookworm
+
+WORKDIR /app
+
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Pin numpy first since everything depends on it
+RUN pip install --no-cache-dir 'numpy==1.20.3'
+
+# Torch 1.9 CPU
+RUN pip install --no-cache-dir \
+    'torch==1.9.0+cpu' \
+    -f https://download.pytorch.org/whl/torch_stable.html
+
+# DGL 0.7 CPU
+RUN pip install --no-cache-dir \
+    'dgl==0.7.0' \
+    -f https://data.dgl.ai/wheels/repo.html
+
+# torch-scatter 2.0.9 prebuilt wheel for torch 1.9 CPU
+RUN pip install --no-cache-dir \
+    'torch-scatter==2.0.9' \
+    -f https://data.pyg.org/whl/torch-1.9.0+cpu.html
+
+# Pin gsd to a version that doesn't require numpy 2
+RUN pip install --no-cache-dir 'gsd==2.8.1'
+
+# Pin Pillow to a version compatible with numpy 1.20
+RUN pip install --no-cache-dir 'Pillow<10'
+
+# Core scientific deps
+RUN pip install --no-cache-dir \
+    'pandas==1.3.2' \
+    'scipy==1.6.2' \
+    'scikit-learn==0.24.2' \
+    'MDAnalysis==2.0.0' \
+    'prody==2.1.0' \
+    'joblib==1.0.1' \
+    'rdkit-pypi==2021.9.4' \
+    'openbabel-wheel' \
+    pytest
+
+COPY . /app
+
+ENV PYTHONPATH=/app
+CMD ["pytest", "tests/", "-v", "--tb=short"]
