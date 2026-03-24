@@ -14,8 +14,9 @@ from RTMScore.model.model2 import RTMScore, DGLGraphTransformer #LigandNet, Targ
 import torch.multiprocessing
 torch.multiprocessing.set_sharing_strategy('file_system')
 
-#you need to set the babel libdir first if you need to generate the pocket
-os.environ["BABEL_LIBDIR"] = "/home/shenchao/.conda/envs/my2/lib/openbabel/3.1.0"
+# Set BABEL_LIBDIR if you need to generate the pocket via openbabel.
+# Uncomment and adjust the path below for your environment:
+# os.environ["BABEL_LIBDIR"] = "/path/to/openbabel/lib"
 
 def Input():
 	p = argparse.ArgumentParser()
@@ -120,8 +121,8 @@ def scoring(prot, lig, modpath,
 					dropout_rate=kwargs["dropout_rate"], 
 					dist_threhold=kwargs["dist_threhold"]).to(kwargs['device'])
 	
-	checkpoint = th.load(modpath, map_location=th.device(kwargs['device']))
-	model.load_state_dict(checkpoint['model_state_dict']) 
+	checkpoint = th.load(modpath, map_location=th.device(kwargs['device']), weights_only=False)
+	model.load_state_dict(checkpoint['model_state_dict'])
 	if atom_contribution:
 		preds, at_contrs, _ = run_an_eval_epoch(model, 
 												test_loader, 
