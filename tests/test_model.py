@@ -1,33 +1,33 @@
 """Tests for RTMScore.model.model2.
 
-Covers the DGLGraphTransformer encoder, the full RTMScore model
-forward pass, the to_dense_batch_dgl helper, and parameter counts.
-These are critical regression guards for a DGL → PyG migration.
+Covers the GraphTransformer encoder, the full RTMScore model
+forward pass, the to_dense_batch_pyg helper, and parameter counts.
+These are critical regression guards for a DGL -> PyG migration.
 """
 
-import dgl
 import numpy as np
 import pytest
 import torch as th
+from torch_geometric.data import Data, Batch
 
 from RTMScore.model.model2 import (
-    DGLGraphTransformer,
+    GraphTransformer,
     GraphTransformerModule,
     FinalGraphTransformerModule,
     MultiHeadAttentionLayer,
     RTMScore,
-    to_dense_batch_dgl,
+    to_dense_batch_pyg,
 )
 
 
 # ===================================================================
-# DGLGraphTransformer
+# GraphTransformer
 # ===================================================================
 
-class TestDGLGraphTransformer:
+class TestGraphTransformer:
     def test_output_shape(self, ref_ligand_graph):
         """Forward pass returns [N, hidden_dim] node features."""
-        model = DGLGraphTransformer(
+        model = GraphTransformer(
             in_channels=41,
             edge_features=10,
             num_hidden_channels=128,
@@ -41,12 +41,12 @@ class TestDGLGraphTransformer:
         model.eval()
         g = ref_ligand_graph
         with th.no_grad():
-            out = model(g, g.ndata["atom"].float(), g.edata["bond"].float())
-        assert out.shape == (g.num_nodes(), 128)
+            out = model(g, g.atom.float(), g.bond.float())
+        assert out.shape == (g.num_nodes, 128)
 
     def test_single_layer(self):
         """num_layers=1 produces only a FinalGraphTransformerModule."""
-        model = DGLGraphTransformer(
+        model = GraphTransformer(
             in_channels=10,
             edge_features=5,
             num_hidden_channels=32,
@@ -56,7 +56,7 @@ class TestDGLGraphTransformer:
         assert isinstance(model.gt_block[0], FinalGraphTransformerModule)
 
     def test_multi_layer_structure(self):
-        model = DGLGraphTransformer(
+        model = GraphTransformer(
             in_channels=10,
             edge_features=5,
             num_hidden_channels=32,
@@ -72,19 +72,22 @@ class TestDGLGraphTransformer:
     def test_batch_norm_vs_layer_norm(self):
         """Both normalization modes should produce valid output."""
         for norm in ("batch", "layer"):
-            model = DGLGraphTransformer(
+            model = GraphTransformer(
                 in_channels=10,
                 edge_features=5,
                 num_hidden_channels=32,
                 num_layers=2,
                 norm_to_apply=norm,
             )
-            g = dgl.graph(([0, 1], [1, 0]), num_nodes=2)
-            g.ndata["x"] = th.randn(2, 10)
-            g.edata["e"] = th.randn(2, 5)
+            g = Data(
+                edge_index=th.tensor([[0, 1], [1, 0]], dtype=th.long),
+                num_nodes=2,
+            )
+            node_feats = th.randn(2, 10)
+            edge_feats = th.randn(2, 5)
             model.eval()
             with th.no_grad():
-                out = model(g, g.ndata["x"], g.edata["e"])
+                out = model(g, node_feats, edge_feats)
             assert out.shape == (2, 32)
             assert th.isfinite(out).all()
 
@@ -102,10 +105,10 @@ class TestMultiHeadAttentionLayer:
             using_bias=False,
             update_edge_feats=True,
         )
-        g = dgl.graph(([0, 1, 2], [1, 2, 0]), num_nodes=3)
+        edge_index = th.tensor([[0, 1, 2], [1, 2, 0]], dtype=th.long)
         node_feats = th.randn(3, 32)
         edge_feats = th.randn(3, 32)
-        h_out, e_out = layer(g, node_feats, edge_feats)
+        h_out, e_out = layer(edge_index, node_feats, edge_feats, num_nodes=3)
         assert h_out.shape == (3, 4, 8)
         assert e_out.shape == (3, 4, 8)
 
@@ -117,33 +120,44 @@ class TestMultiHeadAttentionLayer:
             using_bias=False,
             update_edge_feats=False,
         )
-        g = dgl.graph(([0, 1], [1, 0]), num_nodes=2)
+        edge_index = th.tensor([[0, 1], [1, 0]], dtype=th.long)
         h_out, e_out = layer(
-            g, th.randn(2, 32), th.randn(2, 32),
+            edge_index, th.randn(2, 32), th.randn(2, 32), num_nodes=2,
         )
         assert h_out.shape == (2, 4, 8)
         assert e_out is None
 
 
 # ===================================================================
-# to_dense_batch_dgl
+# to_dense_batch_pyg
 # ===================================================================
 
 class TestToDenseBatchDgl:
     def test_single_graph(self):
-        g = dgl.graph(([0, 1], [1, 0]), num_nodes=3)
+        g = Data(
+            edge_index=th.tensor([[0, 1], [1, 0]], dtype=th.long),
+            num_nodes=3,
+        )
+        # For to_dense_batch we need a batch attribute
+        bg = Batch.from_data_list([g])
         feats = th.tensor([[1.0], [2.0], [3.0]])
-        out, mask = to_dense_batch_dgl(g, feats)
+        out, mask = to_dense_batch_pyg(bg, feats)
         assert out.shape == (1, 3, 1)
         assert mask.shape == (1, 3)
         assert mask.all()
 
     def test_batched_graphs_padding(self):
-        g1 = dgl.graph(([0], [1]), num_nodes=2)
-        g2 = dgl.graph(([0, 1, 2], [1, 2, 0]), num_nodes=4)
-        bg = dgl.batch([g1, g2])
+        g1 = Data(
+            edge_index=th.tensor([[0], [1]], dtype=th.long),
+            num_nodes=2,
+        )
+        g2 = Data(
+            edge_index=th.tensor([[0, 1, 2], [1, 2, 0]], dtype=th.long),
+            num_nodes=4,
+        )
+        bg = Batch.from_data_list([g1, g2])
         feats = th.randn(6, 8)
-        out, mask = to_dense_batch_dgl(bg, feats)
+        out, mask = to_dense_batch_pyg(bg, feats)
         assert out.shape == (2, 4, 8)
         assert mask.shape == (2, 4)
         assert mask[0, :2].all()
@@ -151,10 +165,17 @@ class TestToDenseBatchDgl:
         assert mask[1, :4].all()
 
     def test_fill_value(self):
-        g = dgl.graph(([0], [1]), num_nodes=2)
-        bg = dgl.batch([g, dgl.graph(([], []), num_nodes=3)])
+        g1 = Data(
+            edge_index=th.tensor([[0], [1]], dtype=th.long),
+            num_nodes=2,
+        )
+        g2 = Data(
+            edge_index=th.zeros(2, 0, dtype=th.long),
+            num_nodes=3,
+        )
+        bg = Batch.from_data_list([g1, g2])
         feats = th.ones(5, 1)
-        out, _ = to_dense_batch_dgl(bg, feats, fill_value=-1)
+        out, _ = to_dense_batch_pyg(bg, feats, fill_value=-1)
         assert (out[0, 2:] == -1).all()
 
 
@@ -202,10 +223,10 @@ class TestRTMScoreModel:
         assert mu.shape == (n_pairs, 10)
         assert dist.shape == (n_pairs, 1)
         # atom_types: [total_lig_atoms, 17]
-        total_lig_atoms = bgl.num_nodes()
+        total_lig_atoms = bgl.num_nodes
         assert at.shape == (total_lig_atoms, 17)
         # bond_types: [total_lig_edges, 4]
-        total_lig_edges = bgl.num_edges()
+        total_lig_edges = bgl.num_edges
         assert bt.shape == (total_lig_edges, 4)
 
     def test_forward_reference_shapes_3_samples(
@@ -232,16 +253,16 @@ class TestRTMScoreModel:
     def test_n_gaussians_pi_output(self, model_kwargs):
         """Changing n_gaussians changes the MDN output dimension."""
         from RTMScore.model.model2 import (
-            DGLGraphTransformer,
+            GraphTransformer,
             RTMScore,
         )
 
         for ng in (5, 15):
-            lm = DGLGraphTransformer(
+            lm = GraphTransformer(
                 in_channels=41, edge_features=10,
                 num_hidden_channels=128, num_layers=2,
             )
-            pm = DGLGraphTransformer(
+            pm = GraphTransformer(
                 in_channels=41, edge_features=5,
                 num_hidden_channels=128, num_layers=2,
             )

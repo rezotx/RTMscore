@@ -4,8 +4,8 @@ Covers encoding helpers, atom/bond featurization, and graph
 construction for both ligands (mol_to_graph) and proteins
 (prot_to_graph).  Numeric values are pinned against the reference
 ligand 1qkt_l.sdf and pocket 1qkt_p_pocket_10.0.pdb so that any
-dependency upgrade (DGL → PyG, torch version bump, etc.) that silently
-changes the graph topology or feature tensors will be caught.
+dependency upgrade that silently changes the graph topology or
+feature tensors will be caught.
 """
 
 import numpy as np
@@ -170,21 +170,21 @@ class TestLoadMol:
 class TestMolToGraph:
     def test_reference_ligand_topology(self, ref_ligand_graph):
         """Pin node/edge counts for the reference ligand."""
-        assert ref_ligand_graph.num_nodes() == 20
-        assert ref_ligand_graph.num_edges() == 46
+        assert ref_ligand_graph.num_nodes == 20
+        assert ref_ligand_graph.num_edges == 46
 
     def test_atom_feature_shape(self, ref_ligand_graph):
-        assert ref_ligand_graph.ndata["atom"].shape == (20, 41)
+        assert ref_ligand_graph.atom.shape == (20, 41)
 
     def test_bond_feature_shape(self, ref_ligand_graph):
-        assert ref_ligand_graph.edata["bond"].shape == (46, 10)
+        assert ref_ligand_graph.bond.shape == (46, 10)
 
     def test_position_shape(self, ref_ligand_graph):
-        assert ref_ligand_graph.ndata["pos"].shape == (20, 3)
+        assert ref_ligand_graph.pos.shape == (20, 3)
 
     def test_edges_are_bidirectional(self, ref_ligand_graph):
         """Every edge (u,v) should have a reverse (v,u)."""
-        src, dst = ref_ligand_graph.edges()
+        src, dst = ref_ligand_graph.edge_index[0], ref_ligand_graph.edge_index[1]
         edge_set = set(zip(src.tolist(), dst.tolist()))
         for s, d in zip(src.tolist(), dst.tolist()):
             assert (d, s) in edge_set
@@ -193,7 +193,7 @@ class TestMolToGraph:
         g = mol_to_graph(
             ref_ligand_mol, explicit_H=False, use_chirality=True,
         )
-        assert g.num_edges() == 2 * ref_ligand_mol.GetNumBonds()
+        assert g.num_edges == 2 * ref_ligand_mol.GetNumBonds()
 
     def test_chirality_adds_3_features(self, ref_ligand_mol):
         g_chir = mol_to_graph(
@@ -203,27 +203,27 @@ class TestMolToGraph:
             ref_ligand_mol, explicit_H=False, use_chirality=False,
         )
         assert (
-            g_chir.ndata["atom"].shape[1]
-            == g_nochir.ndata["atom"].shape[1] + 3
+            g_chir.atom.shape[1]
+            == g_nochir.atom.shape[1] + 3
         )
 
     def test_small_molecule(self, ethanol_mol):
-        """Ethanol: 3 heavy atoms, 2 bonds → 4 edges."""
+        """Ethanol: 3 heavy atoms, 2 bonds -> 4 edges."""
         g = mol_to_graph(
             ethanol_mol, explicit_H=False, use_chirality=True,
         )
-        assert g.num_nodes() == 3
-        assert g.num_edges() == 4
+        assert g.num_nodes == 3
+        assert g.num_edges == 4
 
     def test_positions_finite(self, ref_ligand_graph):
-        assert th.isfinite(ref_ligand_graph.ndata["pos"]).all()
+        assert th.isfinite(ref_ligand_graph.pos).all()
 
     def test_atom_features_finite(self, ref_ligand_graph):
-        assert th.isfinite(ref_ligand_graph.ndata["atom"]).all()
+        assert th.isfinite(ref_ligand_graph.atom).all()
 
     def test_bond_features_are_integer(self, ref_ligand_graph):
         """Bond features are 0/1 indicators."""
-        bond = ref_ligand_graph.edata["bond"]
+        bond = ref_ligand_graph.bond
         assert ((bond == 0) | (bond == 1)).all()
 
 
@@ -234,30 +234,30 @@ class TestMolToGraph:
 class TestProtToGraph:
     def test_reference_pocket_topology(self, pocket_graph):
         """Pin node/edge counts for 1qkt pocket at cutoff 10."""
-        assert pocket_graph.num_nodes() == 79
-        assert pocket_graph.num_edges() == 2076
+        assert pocket_graph.num_nodes == 79
+        assert pocket_graph.num_edges == 2076
 
     def test_node_feature_shape(self, pocket_graph):
-        assert pocket_graph.ndata["feats"].shape == (79, 41)
+        assert pocket_graph.feats.shape == (79, 41)
 
     def test_edge_feature_shape(self, pocket_graph):
-        assert pocket_graph.edata["feats"].shape == (2076, 5)
+        assert pocket_graph.edge_feats.shape == (2076, 5)
 
     def test_position_shape(self, pocket_graph):
         """Each residue has padded atom positions [24, 3]."""
-        assert pocket_graph.ndata["pos"].shape == (79, 24, 3)
+        assert pocket_graph.pos.shape == (79, 24, 3)
 
     def test_node_feature_dim_is_41(self, pocket_graph):
-        assert pocket_graph.ndata["feats"].shape[1] == 41
+        assert pocket_graph.feats.shape[1] == 41
 
     def test_edge_feature_dim_is_5(self, pocket_graph):
-        assert pocket_graph.edata["feats"].shape[1] == 5
+        assert pocket_graph.edge_feats.shape[1] == 5
 
     def test_edge_features_finite(self, pocket_graph):
-        assert th.isfinite(pocket_graph.edata["feats"]).all()
+        assert th.isfinite(pocket_graph.edge_feats).all()
 
     def test_node_features_finite(self, pocket_graph):
-        assert th.isfinite(pocket_graph.ndata["feats"]).all()
+        assert th.isfinite(pocket_graph.feats).all()
 
     def test_smaller_cutoff_fewer_edges(self, pocket_pdb_path):
         pocket_mol = load_mol(
@@ -265,5 +265,5 @@ class TestProtToGraph:
         )
         g5 = prot_to_graph(pocket_mol, 5.0)
         g10 = prot_to_graph(pocket_mol, 10.0)
-        assert g5.num_edges() < g10.num_edges()
-        assert g5.num_nodes() == g10.num_nodes()
+        assert g5.num_edges < g10.num_edges
+        assert g5.num_nodes == g10.num_nodes

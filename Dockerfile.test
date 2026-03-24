@@ -11,13 +11,8 @@ RUN pip install --no-cache-dir \
     'torch==2.2.1' \
     --index-url https://download.pytorch.org/whl/cpu
 
-# DGL 2.x from DGL's own wheel repo (matched to torch 2.2 CPU)
-RUN pip install --no-cache-dir \
-    dgl \
-    -f https://data.dgl.ai/wheels/torch-2.2/repo.html
-
-# DGL transitive deps
-RUN pip install --no-cache-dir 'pyyaml' 'pydantic>=2.0' 'torchdata>=0.7,<0.8'
+# PyG
+RUN pip install --no-cache-dir 'torch_geometric>=2.4'
 
 # Core scientific deps
 RUN pip install --no-cache-dir \

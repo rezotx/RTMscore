@@ -7,10 +7,10 @@ Meter metrics, EarlyStopping, and the train/eval epoch runners.
 import os
 import tempfile
 
-import dgl
 import numpy as np
 import pytest
 import torch as th
+from torch_geometric.data import Data, Batch
 
 from RTMScore.model.utils import (
     EarlyStopping,
@@ -33,22 +33,22 @@ class TestCollate:
         items = [vs_dataset[i] for i in range(3)]
         pdbids, bgl, bgp = collate(items)
         assert len(pdbids) == 3
-        assert bgl.batch_size == 3
-        assert bgp.batch_size == 3
+        assert bgl.num_graphs == 3
+        assert bgp.num_graphs == 3
 
     def test_node_counts_sum(self, vs_dataset):
         items = [vs_dataset[i] for i in range(3)]
         individual_lig_nodes = [
-            vs_dataset[i][1].num_nodes() for i in range(3)
+            vs_dataset[i][1].num_nodes for i in range(3)
         ]
         _, bgl, _ = collate(items)
-        assert bgl.num_nodes() == sum(individual_lig_nodes)
+        assert bgl.num_nodes == sum(individual_lig_nodes)
 
     def test_single_item(self, vs_dataset):
         items = [vs_dataset[0]]
         pdbids, bgl, bgp = collate(items)
         assert len(pdbids) == 1
-        assert bgl.batch_size == 1
+        assert bgl.num_graphs == 1
 
 
 # ===================================================================

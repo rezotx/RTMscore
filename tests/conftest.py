@@ -2,12 +2,12 @@
 
 import os
 
-import dgl
 import numpy as np
 import pytest
 import torch as th
 from rdkit import Chem
 from rdkit.Chem import AllChem
+from torch_geometric.data import Data
 
 
 REPO_ROOT = os.path.dirname(os.path.dirname(__file__))
@@ -90,7 +90,7 @@ def benzene_mol():
 
 @pytest.fixture
 def ref_ligand_graph(ref_ligand_mol):
-    """DGL graph of the reference ligand."""
+    """PyG Data graph of the reference ligand."""
     from RTMScore.feats.mol2graph_rdmda_res import mol_to_graph
     return mol_to_graph(
         ref_ligand_mol,
@@ -101,7 +101,7 @@ def ref_ligand_graph(ref_ligand_mol):
 
 @pytest.fixture
 def pocket_graph(pocket_pdb_path):
-    """DGL graph of the pocket protein (via load_mol, same as VSDataset)."""
+    """PyG Data graph of the pocket protein (via load_mol, same as VSDataset)."""
     from RTMScore.feats.mol2graph_rdmda_res import load_mol, prot_to_graph
     pocket_mol = load_mol(
         pocket_pdb_path, explicit_H=False, use_chirality=False,
@@ -136,11 +136,11 @@ def model_kwargs():
 def untrained_model(model_kwargs):
     """An untrained RTMScore model."""
     from RTMScore.model.model2 import (
-        DGLGraphTransformer,
+        GraphTransformer,
         RTMScore,
     )
 
-    ligmodel = DGLGraphTransformer(
+    ligmodel = GraphTransformer(
         in_channels=model_kwargs["num_node_featsl"],
         edge_features=model_kwargs["num_edge_featsl"],
         num_hidden_channels=model_kwargs["hidden_dim0"],
@@ -151,7 +151,7 @@ def untrained_model(model_kwargs):
         dropout_rate=0.15,
         num_layers=6,
     )
-    protmodel = DGLGraphTransformer(
+    protmodel = GraphTransformer(
         in_channels=model_kwargs["num_node_featsp"],
         edge_features=model_kwargs["num_edge_featsp"],
         num_hidden_channels=model_kwargs["hidden_dim0"],

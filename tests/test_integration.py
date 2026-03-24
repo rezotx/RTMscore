@@ -3,7 +3,7 @@
 These tests load the trained model and run full inference on the
 example data, asserting that scores match previously captured values.
 This is the primary regression guard for dependency upgrades
-(DGL → PyG, torch version bumps, numpy, MDAnalysis, etc.).
+(DGL -> PyG, torch version bumps, numpy, MDAnalysis, etc.).
 """
 
 import numpy as np
@@ -12,7 +12,6 @@ import torch as th
 
 from RTMScore.model.utils import run_an_eval_epoch
 
-# Reference values captured from the working code.
 # Reference values captured from original code (Python 3.8, torch 1.9,
 # dgl 0.7, torch-scatter 2.0.9, MDAnalysis 2.0.0) running in Docker.
 E2E_PREDS_FIRST10 = [
@@ -142,7 +141,7 @@ class TestContributions:
         assert preds.shape == (61,)
         assert len(at_contrs) == 61
         # First ligand atom count
-        first_lig_nodes = vs_dataset[0][1].num_nodes()
+        first_lig_nodes = vs_dataset[0][1].num_nodes
         assert at_contrs[0].shape == (first_lig_nodes,)
 
     def test_residue_contributions(
@@ -161,7 +160,7 @@ class TestContributions:
         assert preds.shape == (61,)
         assert len(res_contrs) == 61
         # Pocket residue count
-        prot_nodes = vs_dataset[0][2].num_nodes()
+        prot_nodes = vs_dataset[0][2].num_nodes
         assert res_contrs[0].shape == (prot_nodes,)
 
     def test_atom_contribs_non_negative(
@@ -204,7 +203,7 @@ class TestCheckpointLoading:
         """All three shipped .pth files should load without error."""
         import os
         from RTMScore.model.model2 import (
-            DGLGraphTransformer,
+            GraphTransformer,
             RTMScore,
         )
 
@@ -221,7 +220,7 @@ class TestCheckpointLoading:
             if not os.path.exists(path):
                 pytest.skip(f"{name} not found")
 
-            lm = DGLGraphTransformer(
+            lm = GraphTransformer(
                 in_channels=41, edge_features=10,
                 num_hidden_channels=128,
                 activ_fn=th.nn.SiLU(),
@@ -231,7 +230,7 @@ class TestCheckpointLoading:
                 dropout_rate=0.15,
                 num_layers=6,
             )
-            pm = DGLGraphTransformer(
+            pm = GraphTransformer(
                 in_channels=41, edge_features=5,
                 num_hidden_channels=128,
                 activ_fn=th.nn.SiLU(),

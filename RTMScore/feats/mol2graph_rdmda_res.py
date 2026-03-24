@@ -3,18 +3,17 @@ import numpy as np
 from rdkit import Chem
 import torch as th
 import re, os
-import dgl
+from torch_geometric.data import Data
 from itertools import product, groupby, permutations
 from scipy.spatial import distance_matrix
-from dgl.data.utils import save_graphs, load_graphs, load_labels
 from joblib import Parallel, delayed
 import MDAnalysis as mda
 from MDAnalysis.analysis import dihedrals
 from MDAnalysis.analysis import distances
 
-METAL = ["LI","NA","K","RB","CS","MG","TL","CU","AG","BE","NI","PT","ZN","CO","PD","AG","CR","FE","V","MN","HG",'GA', 
+METAL = ["LI","NA","K","RB","CS","MG","TL","CU","AG","BE","NI","PT","ZN","CO","PD","AG","CR","FE","V","MN","HG",'GA',
 		"CD","YB","CA","SN","PB","EU","SR","SM","BA","RA","AL","IN","TL","Y","LA","CE","PR","ND","GD","TB","DY","ER",
-		"TM","LU","HF","ZR","CE","U","PU","TH"] 
+		"TM","LU","HF","ZR","CE","U","PU","TH"]
 RES_MAX_NATOMS=24
 
 def prot_to_graph(prot, cutoff):
@@ -32,8 +31,7 @@ def prot_to_graph(prot, cutoff):
 	else:
 		src_list, dst_list = [], []
 
-	g = dgl.graph((src_list, dst_list), num_nodes=num_residues)
-	g.ndata["feats"] = th.tensor(res_feats)
+	edge_index = th.tensor([src_list, dst_list], dtype=th.long)
 
 	ca_pos = th.tensor(np.array([obtain_ca_pos(res) for res in u.residues]))
 	center_pos = th.tensor(u.atoms.center_of_mass(compound='residues'))
@@ -42,11 +40,16 @@ def prot_to_graph(prot, cutoff):
 	dis_matx_center = distance_matrix(center_pos, center_pos)
 	cedist = th.tensor([dis_matx_center[i,j] for i,j in edgeids]) * 0.1
 	edge_connect =  th.tensor(np.array([check_connect(u, x, y) for x,y in zip(src_list, dst_list)]))
-	g.edata["feats"] = th.cat([edge_connect.view(-1,1), cadist.view(-1,1), cedist.view(-1,1), th.tensor(distm)], dim=1)
-	#res_max_natoms = max([len(res.atoms) for res in u.residues])
-	g.ndata["pos"] = th.tensor(np.array([np.concatenate([res.atoms.positions, np.full((RES_MAX_NATOMS-len(res.atoms), 3), np.nan)],axis=0) for res in u.residues]))
-	#g.ndata["posmask"] = th.tensor([[1]* len(res.atoms)+[0]*(RES_MAX_NATOMS-len(res.atoms)) for res in u.residues]).bool()
-	#g.ndata["atnum"] = th.tensor([len(res.atoms) for res in u.residues])
+	edge_feats = th.cat([edge_connect.view(-1,1), cadist.view(-1,1), cedist.view(-1,1), th.tensor(distm)], dim=1)
+	pos = th.tensor(np.array([np.concatenate([res.atoms.positions, np.full((RES_MAX_NATOMS-len(res.atoms), 3), np.nan)],axis=0) for res in u.residues]))
+
+	g = Data(
+		edge_index=edge_index,
+		feats=th.tensor(res_feats),
+		edge_feats=edge_feats,
+		pos=pos,
+		num_nodes=num_residues,
+	)
 	return g
 
 
@@ -113,13 +116,13 @@ def obtain_dihediral_angles(res):
 		return [0, 0, 0, 0]
 
 def calc_res_features(res):
-	return np.array(one_of_k_encoding_unk(obtain_resname(res), 
-										['GLY', 'ALA', 'VAL', 'LEU', 'ILE', 'PRO', 'PHE', 'TYR', 
-										'TRP', 'SER', 'THR', 'CYS', 'MET', 'ASN', 'GLN', 'ASP', 
+	return np.array(one_of_k_encoding_unk(obtain_resname(res),
+										['GLY', 'ALA', 'VAL', 'LEU', 'ILE', 'PRO', 'PHE', 'TYR',
+										'TRP', 'SER', 'THR', 'CYS', 'MET', 'ASN', 'GLN', 'ASP',
 										'GLU', 'LYS', 'ARG', 'HIS', 'MSE', 'CSO', 'PTR', 'TPO',
-										'KCX', 'CSD', 'SEP', 'MLY', 'PCA', 'LLP', 'M', 'X']) +          #32  residue type	
+										'KCX', 'CSD', 'SEP', 'MLY', 'PCA', 'LLP', 'M', 'X']) +          #32  residue type
 			obtain_self_dist(res) +  #5
-			obtain_dihediral_angles(res) #4		
+			obtain_dihediral_angles(res) #4
 			)
 
 def obtain_resname(res):
@@ -131,7 +134,7 @@ def obtain_resname(res):
 		resname = "CU"
 	else:
 		resname = res.resname.strip()
-	
+
 	if resname in METAL:
 		return "M"
 	else:
@@ -166,8 +169,8 @@ def check_connect(u, i, j):
 			return 1
 		else:
 			return 0
-		
-	
+
+
 
 def calc_dist(res1, res2):
 	#xx1 = res1.atoms.select_atoms('not name H*')
@@ -188,8 +191,8 @@ def calc_atom_features(atom, explicit_H=False):
     results = one_of_k_encoding_unk(
       atom.GetSymbol(),
       [
-       'C', 'N', 'O', 'S', 'F', 'P', 'Cl', 
-		'Br', 'I', 'B', 'Si', 'Fe', 'Zn', 
+       'C', 'N', 'O', 'S', 'F', 'P', 'Cl',
+		'Br', 'I', 'B', 'Si', 'Fe', 'Zn',
 		'Cu', 'Mn', 'Mo', 'other'
       ]) + one_of_k_encoding(atom.GetDegree(),
                              [0, 1, 2, 3, 4, 5, 6]) + \
@@ -202,7 +205,7 @@ def calc_atom_features(atom, explicit_H=False):
     # In case of explicit hydrogen(QM8, QM9), avoid calling `GetTotalNumHs`
     if not explicit_H:
         results = results + one_of_k_encoding_unk(atom.GetTotalNumHs(),
-                                                  [0, 1, 2, 3, 4])	
+                                                  [0, 1, 2, 3, 4])
     return np.array(results)
 
 
@@ -225,18 +228,18 @@ def calc_bond_features(bond, use_chirality=True):
     return np.array(bond_feats).astype(int)
 
 
-	
+
 def load_mol(molpath, explicit_H=False, use_chirality=True):
 	# load mol
 	if re.search(r'.pdb$', molpath):
 		mol = Chem.MolFromPDBFile(molpath, removeHs=not explicit_H)
 	elif re.search(r'.mol2$', molpath):
 		mol = Chem.MolFromMol2File(molpath, removeHs=not explicit_H)
-	elif re.search(r'.sdf$', molpath):			
+	elif re.search(r'.sdf$', molpath):
 		mol = Chem.MolFromMolFile(molpath, removeHs=not explicit_H)
 	else:
-		raise IOError("only the molecule files with .pdb|.sdf|.mol2 are supported!")	
-	
+		raise IOError("only the molecule files with .pdb|.sdf|.mol2 are supported!")
+
 	if use_chirality:
 		Chem.AssignStereochemistryFrom3D(mol)
 	return mol
@@ -282,16 +285,21 @@ def mol_to_graph(mol, explicit_H=False, use_chirality=True):
 		bond_feats_all.append(bond_feats)
 		bond_feats_all.append(bond_feats)
 
-	g = dgl.graph((src_list, dst_list), num_nodes=num_atoms)
-	g.ndata["atom"] = th.tensor(atom_feats)
-	g.ndata["pos"] = th.tensor(atomCoords)
-	g.edata["bond"] = th.tensor(np.array(bond_feats_all))
+	edge_index = th.tensor([src_list, dst_list], dtype=th.long)
+
+	g = Data(
+		edge_index=edge_index,
+		atom=th.tensor(atom_feats),
+		pos=th.tensor(atomCoords),
+		bond=th.tensor(np.array(bond_feats_all)),
+		num_nodes=num_atoms,
+	)
 	return g
 
 
 
 def mol_to_graph2(prot_path, lig_path, cutoff=10.0, explicit_H=False, use_chirality=True):
-	prot = load_mol(prot_path, explicit_H=explicit_H, use_chirality=use_chirality) 
+	prot = load_mol(prot_path, explicit_H=explicit_H, use_chirality=use_chirality)
 	lig = load_mol(lig_path, explicit_H=explicit_H, use_chirality=use_chirality)
 	#gm = obtain_inter_graphs(prot, lig, cutoff=cutoff)
 	#return gm
@@ -305,11 +313,11 @@ def mol_to_graph2(prot_path, lig_path, cutoff=10.0, explicit_H=False, use_chiral
 def pdbbind_handle(pdbid, args):
 	prot_path = "%s/%s/%s_prot/%s_p_pocket_%s.pdb"%(args.dir, pdbid, pdbid, pdbid, args.cutoff)
 	lig_path = "%s/%s/%s_prot/%s_l.sdf"%(args.dir, pdbid, pdbid, pdbid)
-	try: 
-		gp, gl = mol_to_graph2(prot_path, 
-							lig_path, 
+	try:
+		gp, gl = mol_to_graph2(prot_path,
+							lig_path,
 							cutoff=args.cutoff,
-							explicit_H=args.useH, 
+							explicit_H=args.useH,
 							use_chirality=args.use_chirality)
 	except:
 		print("%s failed to generare the graph"%pdbid)
@@ -322,20 +330,20 @@ def UserInput():
 	import argparse
 	p = argparse.ArgumentParser()
 	p.add_argument('-d', '--dir', default=".",
-						help='The directory to store the protein-ligand complexes.')	
+						help='The directory to store the protein-ligand complexes.')
 	p.add_argument('-c', '--cutoff', default=None, type=float,
-						help='the cutoff to determine the pocket')	
+						help='the cutoff to determine the pocket')
 	p.add_argument('-o', '--outprefix', default="out",
-						help='The output bin file.')	
+						help='The output bin file.')
 	p.add_argument('-usH', '--useH', default=False, action="store_true",
 						help='whether to use the explicit H atoms.')
 	p.add_argument('-uschi', '--use_chirality', default=False, action="store_true",
-						help='whether to use chirality.')							
+						help='whether to use chirality.')
 	p.add_argument('-p', '--parallel', default=False, action="store_true",
 						help='whether to obtain the graphs in parallel (When the dataset is too large,\
-						 it may be out of memory when conducting the parallel mode).')	
-	
-	args = p.parse_args()	
+						 it may be out of memory when conducting the parallel mode).')
+
+	args = p.parse_args()
 	return args
 
 
@@ -350,16 +358,14 @@ def main():
 		for pdbid in pdbids:
 			results.append(pdbbind_handle(pdbid, args))
 	results = list(filter(lambda x: x[1] != None, results))
-	#ids, graphs =  list(zip(*results))
-	#np.save("%s_idsresx.npy"%args.outprefix, ids)
-	#save_graphs("%s_plresx.bin"%args.outprefix, list(graphs))	
 	ids, graphs_p, graphs_l =  list(zip(*results))
 	np.save("%s_idsresz.npy"%args.outprefix, ids)
-	save_graphs("%s_presz.bin"%args.outprefix, list(graphs_p))
-	save_graphs("%s_lresz.bin"%args.outprefix, list(graphs_l))
-	
+	# Note: save_graphs from DGL is no longer available.
+	# Graphs can be saved using torch.save() instead.
+	th.save(list(graphs_p), "%s_presz.pt"%args.outprefix)
+	th.save(list(graphs_l), "%s_lresz.pt"%args.outprefix)
+
 
 
 if __name__ == '__main__':
 	main()
-

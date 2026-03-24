@@ -7,7 +7,7 @@ from torch.distributions import Normal
 from sklearn import metrics
 from sklearn.metrics import roc_auc_score, mean_squared_error, precision_recall_curve, auc
 from scipy.stats import pearsonr, spearmanr
-import dgl
+from torch_geometric.data import Batch
 
 
 class Meter(object):
@@ -15,17 +15,17 @@ class Meter(object):
         self.mask = []
         self.y_pred = []
         self.y_true = []
-		
+
         if (mean is not None) and (std is not None):
             self.mean = mean.cpu()
             self.std = std.cpu()
         else:
             self.mean = None
             self.std = None
-		
+
     def update(self, y_pred, y_true, mask=None):
         """Update for the result of an iteration
-		
+
         Parameters
         ----------
         y_pred : float32 tensor
@@ -44,14 +44,14 @@ class Meter(object):
             self.mask.append(th.ones(self.y_pred[-1].shape))
         else:
             self.mask.append(mask.detach().cpu())
-	
-	
+
+
     def _finalize(self):
         """Prepare for evaluation.
-	
+
         If normalization was performed on the ground truth labels during training,
         we need to undo the normalization on the predicted labels.
-	
+
         Returns
         -------
         mask : float32 tensor
@@ -66,25 +66,25 @@ class Meter(object):
         mask = th.cat(self.mask, dim=0)
         y_pred = th.cat(self.y_pred, dim=0)
         y_true = th.cat(self.y_true, dim=0)
-	
+
         if (self.mean is not None) and (self.std is not None):
             # To compensate for the imbalance between labels during training,
             # we normalize the ground truth labels with training mean and std.
             # We need to undo that for evaluation.
             y_pred = y_pred * self.std + self.mean
-		
+
         return mask, y_pred, y_true
-	
+
     def _reduce_scores(self, scores, reduction='none'):
         """Finalize the scores to return.
-		
+
         Parameters
         ----------
         scores : list of float
             Scores for all tasks.
         reduction : 'none' or 'mean' or 'sum'
             Controls the form of scores for all tasks
-	
+
         Returns
         -------
         float or list of float
@@ -101,10 +101,10 @@ class Meter(object):
         else:
             raise ValueError(
                 "Expect reduction to be 'none', 'mean' or 'sum', got {}".format(reduction))
-	
+
     def multilabel_score(self, score_func, reduction='none'):
         """Evaluate for multi-label prediction.
-		
+
         Parameters
         ----------
         score_func : callable
@@ -112,7 +112,7 @@ class Meter(object):
             input and return a float as the score. The labels are in the form of 1D tensor.
         reduction : 'none' or 'mean' or 'sum'
             Controls the form of scores for all tasks
-		
+
         Returns
         -------
         float or list of float
@@ -131,15 +131,15 @@ class Meter(object):
             if task_score is not None:
                 scores.append(task_score)
         return self._reduce_scores(scores, reduction)
-	
+
     def pearson_r(self, reduction='none'):
         """Compute squared Pearson correlation coefficient.
-		
+
         Parameters
         ----------
         reduction : 'none' or 'mean' or 'sum'
             Controls the form of scores for all tasks
-		
+
         Returns
         -------
         float or list of float
@@ -151,15 +151,15 @@ class Meter(object):
             #return pearsonr(y_true.numpy(), y_pred.numpy())[0] ** 2
             return pearsonr(y_true.numpy(), y_pred.numpy())[0]
         return self.multilabel_score(score, reduction)
-	
+
     def spearman_r(self, reduction='none'):
         """Compute squared Pearson correlation coefficient.
-		
+
         Parameters
         ----------
         reduction : 'none' or 'mean' or 'sum'
             Controls the form of scores for all tasks
-		
+
         Returns
         -------
         float or list of float
@@ -169,16 +169,16 @@ class Meter(object):
         """
         def score(y_true, y_pred):
             return spearmanr(y_true.numpy(), y_pred.numpy())[0]
-        return self.multilabel_score(score, reduction)	
-    
+        return self.multilabel_score(score, reduction)
+
     def mae(self, reduction='none'):
         """Compute mean absolute error.
-		
+
         Parameters
         ----------
         reduction : 'none' or 'mean' or 'sum'
             Controls the form of scores for all tasks
-		
+
         Returns
         -------
         float or list of float
@@ -189,15 +189,15 @@ class Meter(object):
         def score(y_true, y_pred):
             return F.l1_loss(y_true, y_pred).data.item()
         return self.multilabel_score(score, reduction)
-	
+
     def rmse(self, reduction='none'):
         """Compute root mean square error.
-		
+
 		Parameters
         ----------
         reduction : 'none' or 'mean' or 'sum'
             Controls the form of scores for all tasks
-	
+
         Returns
         -------
         float or list of float
@@ -208,20 +208,20 @@ class Meter(object):
         def score(y_true, y_pred):
             return th.sqrt(F.mse_loss(y_pred, y_true).cpu()).item()
         return self.multilabel_score(score, reduction)
-	
+
     def roc_auc_score(self, reduction='none'):
         """Compute the area under the receiver operating characteristic curve (roc-auc score)
         for binary classification.
-	
+
         ROC-AUC scores are not well-defined in cases where labels for a task have one single
         class only (e.g. positive labels only or negative labels only). In this case we will
         simply ignore this task and print a warning message.
-	
+
         Parameters
         ----------
         reduction : 'none' or 'mean' or 'sum'
             Controls the form of scores for all tasks.
-	
+
         Returns
         -------
         float or list of float
@@ -241,20 +241,20 @@ class Meter(object):
             else:
                 return roc_auc_score(y_true.long().numpy(), th.sigmoid(y_pred).numpy())
         return self.multilabel_score(score, reduction)
-	
+
     def pr_auc_score(self, reduction='none'):
         """Compute the area under the precision-recall curve (pr-auc score)
         for binary classification.
-	
+
         PR-AUC scores are not well-defined in cases where labels for a task have one single
         class only (e.g. positive labels only or negative labels only). In this case, we will
         simply ignore this task and print a warning message.
-	
+
         Parameters
         ----------
         reduction : 'none' or 'mean' or 'sum'
             Controls the form of scores for all tasks.
-	
+
         Returns
         -------
         float or list of float
@@ -274,23 +274,23 @@ class Meter(object):
                     y_true.long().numpy(), th.sigmoid(y_pred).numpy())
                 return auc(recall, precision)
         return self.multilabel_score(score, reduction)
-	
+
     def compute_metric(self, metric_name, reduction='none'):
         """Compute metric based on metric name.
-	
+
         Parameters
         ----------
         metric_name : str
-	
+
             * ``'r2'``: compute squared Pearson correlation coefficient
             * ``'mae'``: compute mean absolute error
             * ``'rmse'``: compute root mean square error
             * ``'roc_auc_score'``: compute roc-auc score
             * ``'pr_auc_score'``: compute pr-auc score
-	
+
         reduction : 'none' or 'mean' or 'sum'
             Controls the form of scores for all tasks
-	
+
         Returns
         -------
         float or list of float
@@ -301,7 +301,7 @@ class Meter(object):
         if metric_name == 'rp':
             return self.pearson_r(reduction)
         elif metric_name == 'rs':
-            return self.spearman_r(reduction)    
+            return self.spearman_r(reduction)
         elif metric_name == 'mae':
             return self.mae(reduction)
         elif metric_name == 'rmse':
@@ -319,11 +319,11 @@ class Meter(object):
 
 class EarlyStopping(object):
     """Early stop tracker
-	
+
     Save model checkpoint when observing a performance improvement on
     the validation set and early stop if improvement has not been
     observed for a particular number of epochs.
-	
+
     Parameters
     ----------
     mode : str
@@ -342,23 +342,22 @@ class EarlyStopping(object):
         A metric name that can be used to identify if a higher value is
         better, or vice versa. Default to None. Valid options include:
         ``'r2'``, ``'mae'``, ``'rmse'``, ``'roc_auc_score'``.
-	
+
     Examples
     --------
     Below gives a demo for a fake training process.
-	
+
     >>> import torch
     >>> import torch.nn as nn
     >>> from torch.nn import MSELoss
     >>> from torch.optim import Adam
-    >>> from dgllife.utils import EarlyStopping
-	
+
     >>> model = nn.Linear(1, 1)
     >>> criterion = MSELoss()
     >>> # For MSE, the lower, the better
     >>> stopper = EarlyStopping(mode='lower', filename='test.pth')
     >>> optimizer = Adam(params=model.parameters(), lr=1e-3)
-	
+
     >>> for epoch in range(1000):
     >>>     x = torch.randn(1, 1) # Fake input
     >>>     y = torch.randn(1, 1) # Fake label
@@ -370,7 +369,7 @@ class EarlyStopping(object):
     >>>     early_stop = stopper.step(loss.detach().data, model)
     >>>     if early_stop:
     >>>         break
-	
+
     >>> # Load the final parameters saved by the model
     >>> stopper.load_checkpoint(model)
     """
@@ -378,7 +377,7 @@ class EarlyStopping(object):
         if filename is None:
             #dt = datetime.datetime.now()
             filename = 'early_stop.pth'
-		
+
         if metric is not None:
             assert metric in ['rp', 'rs', 'mae', 'rmse', 'roc_auc_score', 'pr_auc_score'], \
                 "Expect metric to be 'rp' or 'rs' or 'mae' or " \
@@ -389,7 +388,7 @@ class EarlyStopping(object):
             if metric in ['mae', 'rmse']:
                 print('For metric {}, the lower the better'.format(metric))
                 mode = 'lower'
-		
+
         assert mode in ['higher', 'lower']
         self.mode = mode
         if self.mode == 'higher':
@@ -403,27 +402,27 @@ class EarlyStopping(object):
         self.filename = filename
         self.best_score = None
         self.early_stop = False
-	
+
     def _check_higher(self, score, prev_best_score):
         """Check if the new score is higher than the previous best score.
-	
+
         Parameters
         ----------
         score : float
             New score.
         prev_best_score : float
             Previous best score.
-	
+
         Returns
         -------
         bool
             Whether the new score is higher than the previous best score.
         """
         return score > prev_best_score
-	
+
     def _check_lower(self, score, prev_best_score):
         """Check if the new score is lower than the previous best score.
-	
+
         Parameters
         ----------
         score : float
@@ -440,7 +439,7 @@ class EarlyStopping(object):
 
     def step(self, score, model):
         """Update based on a new score.
-	
+
         The new score is typically model performance on the validation set
         for a new epoch.
 
@@ -450,7 +449,7 @@ class EarlyStopping(object):
             New score.
         model : nn.Module
             Model instance.
-	
+
         Returns
         -------
         bool
@@ -471,10 +470,10 @@ class EarlyStopping(object):
             if self.counter >= self.patience:
                 self.early_stop = True
         return self.early_stop
-	
+
     def save_checkpoint(self, model):
         '''Saves model when the metric on the validation set gets improved.
-	
+
         Parameters
         ----------
         model : nn.Module
@@ -482,10 +481,10 @@ class EarlyStopping(object):
         '''
         th.save({'model_state_dict': model.state_dict(),
                     'timestep': self.timestep}, self.filename)
-	
+
     def load_checkpoint(self, model):
         '''Load the latest checkpoint
-	
+
         Parameters
         ----------
         model : nn.Module
@@ -514,32 +513,32 @@ def run_a_train_epoch(epoch, model, data_loader, optimizer, aux_weight=0.001, de
 		pdbids, bgl, bgp = batch_data
 		bgl = bgl.to(device)
 		bgp = bgp.to(device)
-		
-		atom_labels = th.argmax(bgl.ndata["atom"][:,:17], dim=1, keepdim=False)
-		bond_labels = th.argmax(bgl.edata["bond"][:,:4], dim=1, keepdim=False)
-		
+
+		atom_labels = th.argmax(bgl.atom[:,:17], dim=1, keepdim=False)
+		bond_labels = th.argmax(bgl.bond[:,:4], dim=1, keepdim=False)
+
 		pi, sigma, mu, dist, atom_types, bond_types, batch = model(bgp, bgl)
-		
+
 		mdn = mdn_loss_fn(pi, sigma, mu, dist)
 		mdn = mdn[th.where(dist <= model.dist_threhold)[0]]
 		mdn = mdn.mean()
 		atom = F.cross_entropy(atom_types, atom_labels)
 		bond = F.cross_entropy(bond_types, bond_labels)
 		loss = mdn + (atom * aux_weight) + (bond * aux_weight)
-		
+
 		optimizer.zero_grad()
 		loss.backward()
 		optimizer.step()
-		
-		total_loss += loss.item() * bgl.batch_size
-		mdn_loss += mdn.item() * bgl.batch_size
-		atom_loss += atom.item() * bgl.batch_size
-		bond_loss += bond.item() * bgl.batch_size
-		
+
+		total_loss += loss.item() * bgl.num_graphs
+		mdn_loss += mdn.item() * bgl.num_graphs
+		atom_loss += atom.item() * bgl.num_graphs
+		bond_loss += bond.item() * bgl.num_graphs
+
 		if np.isinf(mdn_loss) or np.isnan(mdn_loss): break
 		del bgl, bgp, atom_labels, bond_labels, pi, sigma, mu, dist, atom_types, bond_types, batch, mdn, atom, bond, loss
 		th.cuda.empty_cache()
-		
+
 	return total_loss / len(data_loader.dataset), mdn_loss / len(data_loader.dataset), atom_loss / len(data_loader.dataset), bond_loss / len(data_loader.dataset)
 
 
@@ -557,28 +556,30 @@ def run_an_eval_epoch(model, data_loader, pred=False, atom_contribution=False, r
 			pdbids, bgl, bgp = batch_data
 			bgl = bgl.to(device)
 			bgp = bgp.to(device)
-			atom_labels = th.argmax(bgl.ndata["atom"][:,:17], dim=1, keepdim=False)
-			bond_labels = th.argmax(bgl.edata["bond"][:,:4], dim=1, keepdim=False)
-			
+			atom_labels = th.argmax(bgl.atom[:,:17], dim=1, keepdim=False)
+			bond_labels = th.argmax(bgl.bond[:,:4], dim=1, keepdim=False)
+
 			pi, sigma, mu, dist, atom_types, bond_types, batch = model(bgp, bgl)
-			
+
 			if pred or atom_contribution or res_contribution:
 				prob = calculate_probablity(pi, sigma, mu, dist)
 				if dist_threhold is not None:
 					prob[th.where(dist > dist_threhold)[0]] = 0.
-				
+
 				batch = batch.to(device)
 				if pred:
-					probx = th.zeros(bgl.batch_size, dtype=prob.dtype, device=prob.device)
+					probx = th.zeros(bgl.num_graphs, dtype=prob.dtype, device=prob.device)
 					probx.scatter_add_(0, batch, prob)
 					probs.append(probx)
-				if atom_contribution or res_contribution:				
-					contribs = [prob[batch==i].reshape((bgl.batch_num_nodes()[i], bgp.batch_num_nodes()[i])) for i in range(bgl.batch_size)]
+				if atom_contribution or res_contribution:
+					bgl_batch_num_nodes = bgl.ptr[1:] - bgl.ptr[:-1]
+					bgp_batch_num_nodes = bgp.ptr[1:] - bgp.ptr[:-1]
+					contribs = [prob[batch==i].reshape((bgl_batch_num_nodes[i], bgp_batch_num_nodes[i])) for i in range(bgl.num_graphs)]
 					if atom_contribution:
-						at_contrs.extend([contribs[i].sum(1).cpu().detach().numpy() for i in range(bgl.batch_size)])
+						at_contrs.extend([contribs[i].sum(1).cpu().detach().numpy() for i in range(bgl.num_graphs)])
 					if res_contribution:
-						res_contrs.extend([contribs[i].sum(0).cpu().detach().numpy() for i in range(bgl.batch_size)])
-			
+						res_contrs.extend([contribs[i].sum(0).cpu().detach().numpy() for i in range(bgl.num_graphs)])
+
 			else:
 				mdn = mdn_loss_fn(pi, sigma, mu, dist)
 				mdn = mdn[th.where(dist <= model.dist_threhold)[0]]
@@ -586,16 +587,16 @@ def run_an_eval_epoch(model, data_loader, pred=False, atom_contribution=False, r
 				atom = F.cross_entropy(atom_types, atom_labels)
 				bond = F.cross_entropy(bond_types, bond_labels)
 				loss = mdn + (atom * aux_weight) + (bond * aux_weight)
-				
-				total_loss += loss.item() * bgl.batch_size
-				mdn_loss += mdn.item() * bgl.batch_size
-				atom_loss += atom.item() * bgl.batch_size
-				bond_loss += bond.item() * bgl.batch_size
-				
-		
+
+				total_loss += loss.item() * bgl.num_graphs
+				mdn_loss += mdn.item() * bgl.num_graphs
+				atom_loss += atom.item() * bgl.num_graphs
+				bond_loss += bond.item() * bgl.num_graphs
+
+
 			del bgl, bgp, atom_labels, bond_labels, pi, sigma, mu, dist, atom_types, bond_types, batch
 			th.cuda.empty_cache()
-	
+
 	if atom_contribution or res_contribution:
 		if pred:
 			preds = th.cat(probs)
@@ -606,7 +607,7 @@ def run_an_eval_epoch(model, data_loader, pred=False, atom_contribution=False, r
 		if pred:
 			preds = th.cat(probs)
 			return preds.cpu().detach().numpy()
-		else:		
+		else:
 			return total_loss / len(data_loader.dataset), mdn_loss / len(data_loader.dataset), atom_loss / len(data_loader.dataset), bond_loss / len(data_loader.dataset)
 
 
@@ -615,15 +616,15 @@ def calculate_probablity(pi, sigma, mu, y):
     logprob = normal.log_prob(y.expand_as(normal.loc))
     logprob += th.log(pi)
     prob = logprob.exp().sum(1)
-	
+
     return prob
 
 
 
 def collate(data):
 	pdbids, graphsl, graphsp = map(list, zip(*data))
-	bgl = dgl.batch(graphsl)
-	bgp = dgl.batch(graphsp)
+	bgl = Batch.from_data_list(graphsl)
+	bgp = Batch.from_data_list(graphsp)
 	return pdbids, bgl, bgp
 
 
@@ -636,7 +637,6 @@ def set_random_seed(seed=10):
     if th.cuda.is_available():
         th.cuda.manual_seed(seed)
         th.cuda.manual_seed_all(seed)
-
 
 
 

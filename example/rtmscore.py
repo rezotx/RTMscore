@@ -10,7 +10,7 @@ sys.path.append(os.path.abspath(__file__).replace("rtmscore.py",".."))
 from torch.utils.data import DataLoader
 from RTMScore.data.data import VSDataset
 from RTMScore.model.utils import collate, run_an_eval_epoch
-from RTMScore.model.model2 import RTMScore, DGLGraphTransformer #LigandNet, TargetNet
+from RTMScore.model.model2 import RTMScore, GraphTransformer #LigandNet, TargetNet
 import torch.multiprocessing
 torch.multiprocessing.set_sharing_strategy('file_system')
 
@@ -92,7 +92,7 @@ def scoring(prot, lig, modpath,
 							num_workers=kwargs["num_workers"],
 							collate_fn=collate)
 	
-	ligmodel = DGLGraphTransformer(in_channels=kwargs["num_node_featsl"], 
+	ligmodel = GraphTransformer(in_channels=kwargs["num_node_featsl"], 
 									edge_features=kwargs["num_edge_featsl"], 
 									num_hidden_channels=kwargs["hidden_dim0"],
 									activ_fn=th.nn.SiLU(),
@@ -103,7 +103,7 @@ def scoring(prot, lig, modpath,
 									num_layers=6
 									)
 	
-	protmodel = DGLGraphTransformer(in_channels=kwargs["num_node_featsp"], 
+	protmodel = GraphTransformer(in_channels=kwargs["num_node_featsp"], 
 									edge_features=kwargs["num_edge_featsp"], 
 									num_hidden_channels=kwargs["hidden_dim0"],
 									activ_fn=th.nn.SiLU(),

@@ -1,14 +1,14 @@
 """Tests for RTMScore.data.data.
 
-Covers VSDataset (SDF loading, mol-list input, DGL-graph input)
+Covers VSDataset (SDF loading, mol-list input, PyG Data input)
 and PDBbindDataset (graph-list input, train/test split).
 """
 
-import dgl
 import numpy as np
 import pytest
 import torch as th
 from rdkit import Chem
+from torch_geometric.data import Data
 
 from RTMScore.data.data import PDBbindDataset, VSDataset
 from RTMScore.feats.mol2graph_rdmda_res import mol_to_graph
@@ -34,17 +34,17 @@ class TestVSDatasetFromSDF:
     def test_getitem_returns_triple(self, vs_dataset):
         sid, gl, gp = vs_dataset[0]
         assert isinstance(sid, str)
-        assert isinstance(gl, dgl.DGLGraph)
-        assert isinstance(gp, dgl.DGLGraph)
+        assert isinstance(gl, Data)
+        assert isinstance(gp, Data)
 
     def test_item_0_ligand_graph_shape(self, vs_dataset):
         _, gl, _ = vs_dataset[0]
-        assert gl.num_nodes() == 20
-        assert gl.num_edges() == 46
+        assert gl.num_nodes == 20
+        assert gl.num_edges == 46
 
     def test_item_0_protein_graph_shape(self, vs_dataset):
         _, _, gp = vs_dataset[0]
-        assert gp.num_nodes() == 79
+        assert gp.num_nodes == 79
 
     def test_protein_graph_shared(self, vs_dataset):
         """All items in VS dataset share the same protein graph."""
@@ -55,17 +55,17 @@ class TestVSDatasetFromSDF:
     def test_all_ligand_graphs_valid(self, vs_dataset):
         for i in range(len(vs_dataset)):
             _, gl, _ = vs_dataset[i]
-            assert gl.num_nodes() > 0
-            assert gl.num_edges() >= 0
-            assert "atom" in gl.ndata
-            assert "pos" in gl.ndata
-            assert "bond" in gl.edata
+            assert gl.num_nodes > 0
+            assert gl.num_edges >= 0
+            assert gl.atom is not None
+            assert gl.pos is not None
+            assert gl.bond is not None
 
     def test_ligand_feature_dims(self, vs_dataset):
         _, gl, _ = vs_dataset[0]
-        assert gl.ndata["atom"].shape[1] == 41
-        assert gl.ndata["pos"].shape[1] == 3
-        assert gl.edata["bond"].shape[1] == 10
+        assert gl.atom.shape[1] == 41
+        assert gl.pos.shape[1] == 3
+        assert gl.bond.shape[1] == 10
 
 
 # ===================================================================
@@ -91,7 +91,7 @@ class TestVSDatasetFromMolList:
         )
         assert len(ds) == 2
 
-    def test_dgl_graph_list_input(self, pocket_pdb_path, ethanol_mol):
+    def test_pyg_graph_list_input(self, pocket_pdb_path, ethanol_mol):
         gl = mol_to_graph(
             ethanol_mol, explicit_H=False, use_chirality=True,
         )
@@ -117,7 +117,7 @@ class TestVSDatasetSplitting:
         with open(decoys_sdf_path) as f:
             content = f.read()
         n_blocks = content.count("$$$$")
-        # Some molecules may fail parsing → len(ds) <= n_blocks
+        # Some molecules may fail parsing -> len(ds) <= n_blocks
         assert len(vs_dataset) <= n_blocks
         assert len(vs_dataset) > 0
 
@@ -132,21 +132,25 @@ class TestPDBbindDataset:
         """A small PDBbindDataset from arrays."""
         ids = np.array(["pdb1", "pdb2", "pdb3", "pdb4", "pdb5"])
         graphs_l = [
-            dgl.graph(([0, 1], [1, 0]), num_nodes=3)
+            Data(
+                edge_index=th.tensor([[0, 1], [1, 0]], dtype=th.long),
+                atom=th.randn(3, 41),
+                pos=th.randn(3, 3),
+                bond=th.randn(2, 10),
+                num_nodes=3,
+            )
             for _ in range(5)
         ]
         graphs_p = [
-            dgl.graph(([0], [1]), num_nodes=4)
+            Data(
+                edge_index=th.tensor([[0], [1]], dtype=th.long),
+                feats=th.randn(4, 41),
+                pos=th.randn(4, 24, 3),
+                edge_feats=th.randn(1, 5),
+                num_nodes=4,
+            )
             for _ in range(5)
         ]
-        for g in graphs_l:
-            g.ndata["atom"] = th.randn(3, 41)
-            g.ndata["pos"] = th.randn(3, 3)
-            g.edata["bond"] = th.randn(2, 10)
-        for g in graphs_p:
-            g.ndata["feats"] = th.randn(4, 41)
-            g.ndata["pos"] = th.randn(4, 24, 3)
-            g.edata["feats"] = th.randn(1, 5)
         return PDBbindDataset(ids=ids, ligs=graphs_l, prots=graphs_p)
 
     def test_length(self, simple_pdbbind):
@@ -155,8 +159,8 @@ class TestPDBbindDataset:
     def test_getitem(self, simple_pdbbind):
         pid, gl, gp = simple_pdbbind[0]
         assert pid == "pdb1"
-        assert isinstance(gl, dgl.DGLGraph)
-        assert isinstance(gp, dgl.DGLGraph)
+        assert isinstance(gl, Data)
+        assert isinstance(gp, Data)
 
     def test_train_test_split_sizes(self, simple_pdbbind):
         train_idx, val_idx = simple_pdbbind.train_and_test_split(
@@ -185,7 +189,10 @@ class TestPDBbindDataset:
     def test_mismatched_lengths_raises(self):
         ids = np.array(["a", "b"])
         graphs = [
-            dgl.graph(([0], [1]), num_nodes=2)
+            Data(
+                edge_index=th.tensor([[0], [1]], dtype=th.long),
+                num_nodes=2,
+            )
             for _ in range(3)
         ]
         with pytest.raises(AssertionError):

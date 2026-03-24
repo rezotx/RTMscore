@@ -1,12 +1,11 @@
 import torch as th
 import numpy as np
-import dgl
 from torch.utils.data import DataLoader
 import torch.nn.functional as F
 import sys
 sys.path.append("/home/shenchao/resdocktest2/rtmscore2")
 from RTMScore.data.data import PDBbindDataset
-from RTMScore.model.model2 import RTMScore, DGLGraphTransformer 
+from RTMScore.model.model2 import RTMScore, GraphTransformer 
 from RTMScore.model.utils import collate, EarlyStopping, set_random_seed, run_a_train_epoch, run_an_eval_epoch, mdn_loss_fn
 import torch.multiprocessing
 torch.multiprocessing.set_sharing_strategy('file_system')
@@ -58,7 +57,7 @@ val_data = PDBbindDataset(ids=data.pdbids[val_inds],
 #					  )
 
 
-ligmodel = DGLGraphTransformer(in_channels=41, 
+ligmodel = GraphTransformer(in_channels=41, 
 								edge_features=10, 
 								num_hidden_channels=args["hidden_dim0"],
 								activ_fn=th.nn.SiLU(),
@@ -69,7 +68,7 @@ ligmodel = DGLGraphTransformer(in_channels=41,
 								num_layers=6
 								)
 
-protmodel = DGLGraphTransformer(in_channels=41, 
+protmodel = GraphTransformer(in_channels=41, 
 									edge_features=5, 
 									num_hidden_channels=args["hidden_dim0"],
 									activ_fn=th.nn.SiLU(),
