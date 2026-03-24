@@ -1,4 +1,4 @@
-FROM --platform=linux/amd64 python:3.8.18-slim-bookworm
+FROM --platform=linux/amd64 python:3.12-slim-bookworm
 
 WORKDIR /app
 
@@ -6,39 +6,29 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Pin numpy first since everything depends on it
-RUN pip install --no-cache-dir 'numpy==1.20.3'
-
-# Torch 1.9 CPU
+# Torch 2.2.1 CPU
 RUN pip install --no-cache-dir \
-    'torch==1.9.0+cpu' \
-    -f https://download.pytorch.org/whl/torch_stable.html
+    'torch==2.2.1' \
+    --index-url https://download.pytorch.org/whl/cpu
 
-# DGL 0.7 CPU
+# DGL 2.x from DGL's own wheel repo (matched to torch 2.2 CPU)
 RUN pip install --no-cache-dir \
-    'dgl==0.7.0' \
-    -f https://data.dgl.ai/wheels/repo.html
+    dgl \
+    -f https://data.dgl.ai/wheels/torch-2.2/repo.html
 
-# torch-scatter 2.0.9 prebuilt wheel for torch 1.9 CPU
-RUN pip install --no-cache-dir \
-    'torch-scatter==2.0.9' \
-    -f https://data.pyg.org/whl/torch-1.9.0+cpu.html
-
-# Pin gsd to a version that doesn't require numpy 2
-RUN pip install --no-cache-dir 'gsd==2.8.1'
-
-# Pin Pillow to a version compatible with numpy 1.20
-RUN pip install --no-cache-dir 'Pillow<10'
+# DGL transitive deps
+RUN pip install --no-cache-dir 'pyyaml' 'pydantic>=2.0' 'torchdata>=0.7,<0.8'
 
 # Core scientific deps
 RUN pip install --no-cache-dir \
-    'pandas==1.3.2' \
-    'scipy==1.6.2' \
-    'scikit-learn==0.24.2' \
-    'MDAnalysis==2.0.0' \
-    'prody==2.1.0' \
-    'joblib==1.0.1' \
-    'rdkit-pypi==2021.9.4' \
+    'numpy>=1.26,<2' \
+    'pandas>=2.0' \
+    'scipy>=1.11' \
+    'scikit-learn>=1.3' \
+    'rdkit>=2024.3' \
+    'MDAnalysis>=2.6' \
+    'prody>=2.4' \
+    'joblib>=1.3' \
     'openbabel-wheel' \
     pytest
 
