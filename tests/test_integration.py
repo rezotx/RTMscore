@@ -273,3 +273,93 @@ class TestCheckpointLoading:
             device="cpu",
         )
         np.testing.assert_array_equal(p1, p2)
+
+
+# ===================================================================
+# Correlation with original DGL implementation
+# ===================================================================
+
+class TestDglCorrelation:
+    """Verify PyG scores are highly correlated with original DGL scores.
+
+    Reference scores were captured from the original environment
+    (Python 3.8, torch 1.9, DGL 0.7) and committed in
+    tests/data/dgl_reference_scores.json. See PYG-MIGRATION.md.
+    """
+
+    @pytest.fixture
+    def dgl_reference(self):
+        import json
+        import os
+
+        path = os.path.join(
+            os.path.dirname(__file__),
+            "data",
+            "dgl_reference_scores.json",
+        )
+        with open(path) as f:
+            return json.load(f)
+
+    def test_spearman_correlation(
+        self, trained_model, full_dataloader, model_kwargs,
+        dgl_reference,
+    ):
+        from scipy.stats import spearmanr
+
+        pyg_preds = run_an_eval_epoch(
+            trained_model,
+            full_dataloader,
+            pred=True,
+            dist_threhold=model_kwargs["dist_threhold"],
+            device="cpu",
+        )
+        dgl_scores = np.array(dgl_reference["scores"])
+        rho, _ = spearmanr(pyg_preds, dgl_scores)
+        assert rho > 0.98
+
+    def test_pearson_correlation(
+        self, trained_model, full_dataloader, model_kwargs,
+        dgl_reference,
+    ):
+        from scipy.stats import pearsonr
+
+        pyg_preds = run_an_eval_epoch(
+            trained_model,
+            full_dataloader,
+            pred=True,
+            dist_threhold=model_kwargs["dist_threhold"],
+            device="cpu",
+        )
+        dgl_scores = np.array(dgl_reference["scores"])
+        r, _ = pearsonr(pyg_preds, dgl_scores)
+        assert r > 0.99
+
+    def test_top10_identical(
+        self, trained_model, full_dataloader, model_kwargs,
+        dgl_reference,
+    ):
+        pyg_preds = run_an_eval_epoch(
+            trained_model,
+            full_dataloader,
+            pred=True,
+            dist_threhold=model_kwargs["dist_threhold"],
+            device="cpu",
+        )
+        dgl_scores = np.array(dgl_reference["scores"])
+        dgl_top10 = set(np.argsort(-dgl_scores)[:10])
+        pyg_top10 = set(np.argsort(-pyg_preds)[:10])
+        assert dgl_top10 == pyg_top10
+
+    def test_same_top1(
+        self, trained_model, full_dataloader, model_kwargs,
+        dgl_reference,
+    ):
+        pyg_preds = run_an_eval_epoch(
+            trained_model,
+            full_dataloader,
+            pred=True,
+            dist_threhold=model_kwargs["dist_threhold"],
+            device="cpu",
+        )
+        dgl_scores = np.array(dgl_reference["scores"])
+        assert np.argmax(pyg_preds) == np.argmax(dgl_scores)
