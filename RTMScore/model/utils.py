@@ -4,6 +4,7 @@ import numpy as np
 import random
 import torch.nn.functional as F
 from torch.distributions import Normal
+from torch_scatter import scatter_add
 from sklearn import metrics
 from sklearn.metrics import roc_auc_score, mean_squared_error, precision_recall_curve, auc
 from scipy.stats import pearsonr, spearmanr
@@ -491,7 +492,7 @@ class EarlyStopping(object):
         model : nn.Module
             Model instance.
         '''
-        model.load_state_dict(th.load(self.filename, weights_only=False)['model_state_dict'])
+        model.load_state_dict(th.load(self.filename)['model_state_dict'])
 
 def mdn_loss_fn(pi, sigma, mu, y, eps=1e-10):
     normal = Normal(mu, sigma)
@@ -569,8 +570,7 @@ def run_an_eval_epoch(model, data_loader, pred=False, atom_contribution=False, r
 				
 				batch = batch.to(device)
 				if pred:
-					probx = th.zeros(bgl.batch_size, dtype=prob.dtype, device=prob.device)
-					probx.scatter_add_(0, batch, prob)
+					probx = scatter_add(prob, batch, dim=0, dim_size=bgl.batch_size)
 					probs.append(probx)
 				if atom_contribution or res_contribution:				
 					contribs = [prob[batch==i].reshape((bgl.batch_num_nodes()[i], bgp.batch_num_nodes()[i])) for i in range(bgl.batch_size)]
@@ -624,6 +624,14 @@ def collate(data):
 	pdbids, graphsl, graphsp = map(list, zip(*data))
 	bgl = dgl.batch(graphsl)
 	bgp = dgl.batch(graphsp)
+	for nty in bgl.ntypes:
+		bgl.set_n_initializer(dgl.init.zero_initializer, ntype=nty)
+	for ety in bgl.canonical_etypes:
+		bgl.set_e_initializer(dgl.init.zero_initializer, etype=ety)
+	for nty in bgp.ntypes:
+		bgp.set_n_initializer(dgl.init.zero_initializer, ntype=nty)
+	for ety in bgp.canonical_etypes:
+		bgp.set_e_initializer(dgl.init.zero_initializer, etype=ety)	
 	return pdbids, bgl, bgp
 
 

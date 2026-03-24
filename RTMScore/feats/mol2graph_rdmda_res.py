@@ -20,29 +20,27 @@ RES_MAX_NATOMS=24
 def prot_to_graph(prot, cutoff):
 	"""obtain the residue graphs"""
 	u = mda.Universe(prot)
+	g = dgl.DGLGraph()
+	# Add nodes
 	num_residues = len(u.residues)
-
+	g.add_nodes(num_residues)
+	
 	res_feats = np.array([calc_res_features(res) for res in u.residues])
-	edgeids, distm = obatin_edge(u, cutoff)
-
-	if len(edgeids) > 0:
-		src_list, dst_list = zip(*edgeids)
-		src_list = list(src_list)
-		dst_list = list(dst_list)
-	else:
-		src_list, dst_list = [], []
-
-	g = dgl.graph((src_list, dst_list), num_nodes=num_residues)
 	g.ndata["feats"] = th.tensor(res_feats)
-
-	ca_pos = th.tensor(np.array([obtain_ca_pos(res) for res in u.residues]))
-	center_pos = th.tensor(u.atoms.center_of_mass(compound='residues'))
-	dis_matx_ca = distance_matrix(ca_pos, ca_pos)
+	edgeids, distm = obatin_edge(u, cutoff)	
+	src_list, dst_list = zip(*edgeids)
+	g.add_edges(src_list, dst_list)
+	
+	g.ndata["ca_pos"] = th.tensor(np.array([obtain_ca_pos(res) for res in u.residues]))	
+	g.ndata["center_pos"] = th.tensor(u.atoms.center_of_mass(compound='residues'))
+	dis_matx_ca = distance_matrix(g.ndata["ca_pos"], g.ndata["ca_pos"])
 	cadist = th.tensor([dis_matx_ca[i,j] for i,j in edgeids]) * 0.1
-	dis_matx_center = distance_matrix(center_pos, center_pos)
+	dis_matx_center = distance_matrix(g.ndata["center_pos"], g.ndata["center_pos"])
 	cedist = th.tensor([dis_matx_center[i,j] for i,j in edgeids]) * 0.1
 	edge_connect =  th.tensor(np.array([check_connect(u, x, y) for x,y in zip(src_list, dst_list)]))
 	g.edata["feats"] = th.cat([edge_connect.view(-1,1), cadist.view(-1,1), cedist.view(-1,1), th.tensor(distm)], dim=1)
+	g.ndata.pop("ca_pos")
+	g.ndata.pop("center_pos")
 	#res_max_natoms = max([len(res.atoms) for res in u.residues])
 	g.ndata["pos"] = th.tensor(np.array([np.concatenate([res.atoms.positions, np.full((RES_MAX_NATOMS-len(res.atoms), 3), np.nan)],axis=0) for res in u.residues]))
 	#g.ndata["posmask"] = th.tensor([[1]* len(res.atoms)+[0]*(RES_MAX_NATOMS-len(res.atoms)) for res in u.residues]).bool()
@@ -247,27 +245,33 @@ def mol_to_graph(mol, explicit_H=False, use_chirality=True):
 	mol: rdkit.Chem.rdchem.Mol
 	explicit_H: whether to use explicit H
 	use_chirality: whether to use chirality
-	"""
-
+	"""   	
+				
+	g = dgl.DGLGraph()
+	# Add nodes
 	num_atoms = mol.GetNumAtoms()
-
+	g.add_nodes(num_atoms)
+	
 	atom_feats = np.array([calc_atom_features(a, explicit_H=explicit_H) for a in mol.GetAtoms()])
 	if use_chirality:
 		chiralcenters = Chem.FindMolChiralCenters(mol,force=True,includeUnassigned=True, useLegacyImplementation=False)
-		chiral_arr = np.zeros([num_atoms,3])
+		chiral_arr = np.zeros([num_atoms,3]) 
 		for (i, rs) in chiralcenters:
 			if rs == 'R':
-				chiral_arr[i, 0] =1
+				chiral_arr[i, 0] =1 
 			elif rs == 'S':
-				chiral_arr[i, 1] =1
+				chiral_arr[i, 1] =1 
 			else:
-				chiral_arr[i, 2] =1
+				chiral_arr[i, 2] =1 
 		atom_feats = np.concatenate([atom_feats,chiral_arr],axis=1)
-
+			
+	g.ndata["atom"] = th.tensor(atom_feats)
+	
 	# obtain the positions of the atoms
 	atomCoords = mol.GetConformer().GetPositions()
-
-	# Build edges
+	g.ndata["pos"] = th.tensor(atomCoords)
+	
+	# Add edges
 	src_list = []
 	dst_list = []
 	bond_feats_all = []
@@ -278,14 +282,22 @@ def mol_to_graph(mol, explicit_H=False, use_chirality=True):
 		v = bond.GetEndAtomIdx()
 		bond_feats = calc_bond_features(bond, use_chirality=use_chirality)
 		src_list.extend([u, v])
-		dst_list.extend([v, u])
+		dst_list.extend([v, u])		
 		bond_feats_all.append(bond_feats)
 		bond_feats_all.append(bond_feats)
-
-	g = dgl.graph((src_list, dst_list), num_nodes=num_atoms)
-	g.ndata["atom"] = th.tensor(atom_feats)
-	g.ndata["pos"] = th.tensor(atomCoords)
+	
+	g.add_edges(src_list, dst_list)
+	#normal_all = []
+	#for i in etype_feature_all:
+	#	normal = etype_feature_all.count(i)/len(etype_feature_all)
+	#	normal = round(normal, 1)
+	#	normal_all.append(normal)
+	
 	g.edata["bond"] = th.tensor(np.array(bond_feats_all))
+	#g.edata["normal"] = th.tensor(normal_all)
+	
+	#dis_matx = distance_matrix(g.ndata["pos"], g.ndata["pos"])
+	#g.edata["dist"] = th.tensor([dis_matx[i,j] for i,j in zip(*g.edges())]) * 0.1	
 	return g
 
 
