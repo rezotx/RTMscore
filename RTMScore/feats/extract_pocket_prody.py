@@ -3,7 +3,6 @@ using prody to extract the pocket
 """
 import os, re
 import prody as pr
-from openbabel import openbabel as ob
 #import subprocess
 #os.environ["BABEL_LIBDIR"] = "/home/shenchao/.conda/envs/my2/lib/openbabel/3.1.0"
 
@@ -45,13 +44,21 @@ def extract_pocket(protpath,
 		ligname: the name of the ligand.
 		workdir: working directory.
 	"""
+	try:
+		from openbabel import openbabel as ob
+	except ImportError:
+		raise ImportError(
+			"openbabel is required for pocket extraction. "
+			"Install it via: pip install openbabel-wheel, or "
+			"conda install -c conda-forge openbabel"
+		)
 	if protname is None:
 		protname = os.path.basename(protpath).split('.')[0]
 	if ligname is None:
 		ligname = os.path.basename(ligpath).split('.')[0]
 	obConversion = ob.OBConversion()
 	obConversion.SetInAndOutFormats(ligpath.split('.')[-1], "pdb")
-	
+
 	if not re.search(r'.pdb$', ligpath):
 		# convert ligand to pdb
 		ligand = ob.OBMol()
