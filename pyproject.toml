@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rtmscore"
+version = "1.0.0"
+description = "RTMScore: A novel scoring function based on residue-atom distance likelihood potential and graph transformer for protein-ligand interactions."
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.8"
+authors = [
+    {name = "Chao Shen"},
+]
+dependencies = [
+    "numpy",
+    "pandas",
+    "scipy",
+    "scikit-learn",
+    "rdkit-pypi",
+    "MDAnalysis",
+    "prody",
+    "joblib",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/sc8668/RTMScore"
+
+[tool.setuptools.packages.find]
+include = ["RTMScore*"]
